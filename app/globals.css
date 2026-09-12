@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/* `dark:` follows the OS preference and an explicit `.dark` class on <html>,
+   matching how components detect dark mode at runtime. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:not(.light *)) {
+      @slot;
+    }
+  }
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
