@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { Sparkles, Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +34,48 @@ interface GravitationalShockwave {
     power: number;
 }
 
+const DARK_SCHEME_QUERY = '(prefers-color-scheme: dark)';
+
+const subscribeToColorScheme = (onChange: () => void) => {
+    const mediaQuery = window.matchMedia(DARK_SCHEME_QUERY);
+    mediaQuery.addEventListener('change', onChange);
+    return () => mediaQuery.removeEventListener('change', onChange);
+};
+
+const getColorSchemeSnapshot = () => window.matchMedia(DARK_SCHEME_QUERY).matches;
+const getColorSchemeServerSnapshot = () => true;
+
+const drawLatticeLink = (
+    ctx: CanvasRenderingContext2D,
+    n1: MatrixNode,
+    n2: MatrixNode,
+    restLen: number,
+    isDark: boolean,
+    nodeColor: string
+) => {
+    const dx = n1.x - n2.x;
+    const dy = n1.y - n2.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const stretch = Math.abs(dist - restLen) / restLen;
+    const isTensioned = n1.tension > 0.05 || n2.tension > 0.05 || stretch > 0.1;
+
+    if (isTensioned) {
+        const glow = Math.max(n1.tension, n2.tension, stretch * 2);
+        ctx.strokeStyle = isDark
+            ? `rgba(255, 255, 255, ${Math.min(1, 0.25 + glow * 0.75)})`
+            : `rgba(0, 0, 0, ${Math.min(1, 0.25 + glow * 0.75)})`;
+        ctx.lineWidth = 0.8 + glow * 1.4;
+    } else {
+        ctx.strokeStyle = `rgba(${nodeColor}, ${isDark ? 0.08 : 0.05})`;
+        ctx.lineWidth = 0.65;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(n1.x, n1.y);
+    ctx.lineTo(n2.x, n2.y);
+    ctx.stroke();
+};
+
 export interface KineticMatrixProps {
     title?: string;
     className?: string;
@@ -46,17 +88,14 @@ export function KineticMatrix({
     const containerRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    const [isDarkMode, setIsDarkMode] = useState(true);
     const [isRunning, setIsRunning] = useState(true);
 
     // Sync color scheme preference
-    useEffect(() => {
-        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-        setIsDarkMode(mediaQuery.matches);
-        const handler = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-        mediaQuery.addEventListener('change', handler);
-        return () => mediaQuery.removeEventListener('change', handler);
-    }, []);
+    const isDarkMode = useSyncExternalStore(
+        subscribeToColorScheme,
+        getColorSchemeSnapshot,
+        getColorSchemeServerSnapshot
+    );
 
     // Pointer state with smooth inertia
     const pointerRef = useRef({
@@ -359,37 +398,6 @@ export function KineticMatrix({
         animId = requestAnimationFrame(render);
         return () => cancelAnimationFrame(animId);
     }, [isRunning, isDarkMode]);
-
-    const drawLatticeLink = (
-        ctx: CanvasRenderingContext2D,
-        n1: MatrixNode,
-        n2: MatrixNode,
-        restLen: number,
-        isDark: boolean,
-        nodeColor: string
-    ) => {
-        const dx = n1.x - n2.x;
-        const dy = n1.y - n2.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const stretch = Math.abs(dist - restLen) / restLen;
-        const isTensioned = n1.tension > 0.05 || n2.tension > 0.05 || stretch > 0.1;
-
-        if (isTensioned) {
-            const glow = Math.max(n1.tension, n2.tension, stretch * 2);
-            ctx.strokeStyle = isDark
-                ? `rgba(255, 255, 255, ${Math.min(1, 0.25 + glow * 0.75)})`
-                : `rgba(0, 0, 0, ${Math.min(1, 0.25 + glow * 0.75)})`;
-            ctx.lineWidth = 0.8 + glow * 1.4;
-        } else {
-            ctx.strokeStyle = `rgba(${nodeColor}, ${isDark ? 0.08 : 0.05})`;
-            ctx.lineWidth = 0.65;
-        }
-
-        ctx.beginPath();
-        ctx.moveTo(n1.x, n1.y);
-        ctx.lineTo(n2.x, n2.y);
-        ctx.stroke();
-    };
 
     const handlePointerMove = (e: React.MouseEvent<HTMLDivElement>) => {
         const container = containerRef.current;
