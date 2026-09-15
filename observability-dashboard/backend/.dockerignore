@@ -1,0 +1,15 @@
+# Installed inside the image; a host copy carries the wrong platform binaries.
+node_modules/
+
+# Never bake secrets into an image — compose injects the environment instead.
+.env
+.env.*
+
+tests/
+coverage/
+*.log
+.git/
+.gitignore
+*.md
+Dockerfile
+.dockerignore

@@ -1,0 +1,54 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Discovers containers through the Docker socket rather than reading
+  # /var/lib/docker/containers directly. That path lives inside the VM on
+  # Docker Desktop and is awkward to mount portably; the socket is not.
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'compose_service'
+
+    pipeline_stages:
+      # The backend emits one JSON object per line, which is exactly why the
+      # logger was written that way — no regex parsing, no multiline stitching.
+      - json:
+          expressions:
+            level: level
+            service: service
+            timestamp: timestamp
+            message: message
+
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+          # Lines from other containers (postgres, nginx) are not JSON and have
+          # no timestamp field; keep them rather than dropping the whole line.
+          action_on_failure: fudge
+
+      # ONLY low-cardinality fields become labels. requestId, userId and
+      # orderId stay inside the line: every distinct label value creates a
+      # separate stream in Loki, and a per-request label would create one
+      # stream per request. They remain queryable with
+      #   {container="observability-backend"} | json | requestId="..."
+      - labels:
+          level:
+          service:

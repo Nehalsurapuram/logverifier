@@ -1,0 +1,47 @@
+groups:
+  - name: backend
+    interval: 15s
+    rules:
+      # These are the conditions the anomaly detector will consume in the next
+      # phase. Expressing them as recording/alerting rules keeps the definition
+      # of "abnormal" in one place rather than scattered across dashboards.
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status_class="5xx"}[2m]))
+            /
+          clamp_min(sum(rate(http_requests_total[2m])), 0.001) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'More than 5% of requests are failing'
+
+      - alert: SlowResponses
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'p95 latency is above one second'
+
+      - alert: DatabasePoolSaturated
+        # Requests queueing for a connection means the pool is the bottleneck,
+        # not PostgreSQL.
+        expr: db_pool_waiting_requests > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Requests are queueing for a database connection'
+
+      - alert: PaymentFailureSpike
+        expr: |
+          sum(rate(payments_total{status!="succeeded"}[5m]))
+            /
+          clamp_min(sum(rate(payments_total[5m])), 0.001) > 0.3
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Over 30% of payments are failing'

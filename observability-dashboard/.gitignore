@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# environment — the example and the test fixture are committed on purpose
+.env
+.env.*
+!.env.example
+!backend/.env.test
+
+# logs and coverage
+*.log
+npm-debug.log*
+coverage/
+
+# build output
+dist/
+build/
+
+# editors and os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

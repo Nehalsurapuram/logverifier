@@ -1,0 +1,199 @@
+name: observability-dashboard
+
+# Phase 1: the sample backend and its database.
+# Prometheus, Loki, Grafana and the AI service join this file in later phases.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: observability-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-observability}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-observability}
+      POSTGRES_DB: ${POSTGRES_DB:-observability}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-observability} -d ${POSTGRES_DB:-observability}
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [observability]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: observability-backend
+    restart: unless-stopped
+    # Wait for a database that actually accepts connections, not just a started
+    # container, so the first readiness probe is meaningful.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      SERVICE_NAME: ${SERVICE_NAME:-observability-backend}
+      HOST: 0.0.0.0
+      PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      DB_AUTO_MIGRATE: ${DB_AUTO_MIGRATE:-true}
+      TAX_RATE_PERCENT: ${TAX_RATE_PERCENT:-8.5}
+      MAX_ORDER_ITEMS: ${MAX_ORDER_ITEMS:-20}
+      SIMULATED_DELAY_ENABLED: ${SIMULATED_DELAY_ENABLED:-false}
+      SIMULATED_DELAY_MIN_MS: ${SIMULATED_DELAY_MIN_MS:-0}
+      SIMULATED_DELAY_MAX_MS: ${SIMULATED_DELAY_MAX_MS:-0}
+      PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0}
+      # `postgres` is the service name on the compose network — this is the one
+      # value that must differ from the .env used for a local npm start.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-observability}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-observability}
+      POSTGRES_DB: ${POSTGRES_DB:-observability}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_POOL_MIN: ${DB_POOL_MIN:-0}
+      DB_CONNECTION_TIMEOUT_MS: ${DB_CONNECTION_TIMEOUT_MS:-5000}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+      DB_QUERY_TIMEOUT_MS: ${DB_QUERY_TIMEOUT_MS:-15000}
+      DB_SLOW_QUERY_MS: ${DB_SLOW_QUERY_MS:-500}
+      DB_HEALTH_INTERVAL_MS: ${DB_HEALTH_INTERVAL_MS:-10000}
+    ports:
+      - "${PORT:-4000}:4000"
+    healthcheck:
+      # node:alpine ships no curl or wget; Node 22 has a global fetch.
+      test:
+        - CMD
+        - node
+        - -e
+        - 'fetch("http://127.0.0.1:4000/health").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [observability]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: observability-frontend
+    restart: unless-stopped
+    # nginx proxies /api to the backend, so it must be answering first.
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      # 127.0.0.1, not localhost: inside the container localhost resolves to
+      # ::1 first and nginx listens only on IPv4, so the check would fail
+      # against a server that is working perfectly.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [observability]
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: observability-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [observability]
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: observability-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    networks: [observability]
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: observability-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    depends_on:
+      loki:
+        condition: service_healthy
+    volumes:
+      - ./infra/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # Read-only Docker socket, used only to discover containers and read
+      # their log streams.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [observability]
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: observability-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      # 3001, because 3000 is often taken and Grafana is not the main UI here.
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [observability]
+
+volumes:
+  postgres-data:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+
+networks:
+  observability:
+    driver: bridge
