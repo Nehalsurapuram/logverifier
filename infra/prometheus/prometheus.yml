@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: logverifier
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The sample backend starts exposing /metrics in phase 5. Until the api
+  # service exists this target reports as down, which is expected.
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:4000"]
+        labels:
+          service: api
