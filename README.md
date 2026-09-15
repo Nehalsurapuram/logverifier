@@ -28,21 +28,22 @@ User → Sample Backend → Prometheus → Grafana
 ## Prerequisites
 
 - [Docker Desktop](https://docs.docker.com/desktop/install/windows-install/) — runs PostgreSQL, Prometheus, Loki, Grafana
-- [Node.js 22 LTS](https://nodejs.org/) — for the api and ai services
-- [bun](https://bun.sh/) — workspace and dashboard tooling
+- [bun](https://bun.sh/) — workspace tooling, and the runtime for the api and ai services
 
 ## Getting started
 
 ```bash
 cp .env.example .env     # adjust credentials if you like
 bun install
-bun run infra:up         # start postgres, prometheus, loki, grafana
+bun run infra:up         # start postgres, api, prometheus, loki, grafana
 bun run dev:web          # dashboard on http://localhost:3000
+bun run dev:api          # sample backend on http://localhost:4000
 ```
 
 | Service    | URL                     | Credentials     |
 | ---------- | ----------------------- | --------------- |
 | Dashboard  | http://localhost:3000   | —               |
+| API        | http://localhost:4000   | —               |
 | Grafana    | http://localhost:3001   | `admin`/`admin` |
 | Prometheus | http://localhost:9090   | —               |
 | Loki       | http://localhost:3100   | —               |
@@ -50,13 +51,17 @@ bun run dev:web          # dashboard on http://localhost:3000
 
 Grafana runs on 3001 because the dashboard owns 3000.
 
+The api answers `GET /healthz` (liveness) and `GET /readyz` (readiness — 503 until
+every dependency it probes is reachable). Every response carries an `x-request-id`;
+phase 4 puts that id on each log line so Grafana can pivot from a log to its request.
+
 Useful scripts: `infra:down` (stop), `infra:logs` (tail), `infra:ps` (status),
 `infra:reset` (stop **and delete all volumes**).
 
 ## Build phases
 
-1. **Project foundation** ← current
-2. Backend (Express)
+1. Project foundation
+2. **Backend (Express)** ← current
 3. Database (PostgreSQL)
 4. Structured logging
 5. Prometheus metrics

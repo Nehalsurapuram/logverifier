@@ -1,0 +1,23 @@
+# Installed inside the image; host copies carry Windows symlinks and wrong
+# platform binaries.
+node_modules/
+**/node_modules/
+
+# Build output and caches
+.next/
+**/.next/
+dist/
+**/dist/
+out/
+coverage/
+*.tsbuildinfo
+
+# Secrets stay out of the image; compose injects them as environment.
+.env
+.env.*
+!.env.example
+
+.git/
+.gitignore
+**/*.md
+infra/

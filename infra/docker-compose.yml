@@ -1,7 +1,7 @@
 name: logverifier
 
-# Phase 1 foundation: data store + observability backends only.
-# The api and ai services join this file in phases 2 and 10.
+# Data store, observability backends, and the sample backend.
+# The ai service joins this file in phase 10.
 
 services:
   postgres:
@@ -23,6 +23,26 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks: [logverifier]
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: logverifier-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+    ports:
+      - "${API_PORT:-4000}:4000"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks: [logverifier]
 
   prometheus:
