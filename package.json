@@ -9,8 +9,12 @@
   "packageManager": "bun@1.3.14",
   "scripts": {
     "dev:web": "bun --filter @logverifier/web dev",
+    "dev:api": "bun --filter @logverifier/api dev",
     "build:web": "bun --filter @logverifier/web build",
+    "build:api": "bun --filter @logverifier/api build",
+    "start:api": "bun --filter @logverifier/api start",
     "lint": "bun --filter '*' lint",
+    "typecheck": "bun --filter '*' typecheck",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "infra:logs": "docker compose -f infra/docker-compose.yml logs -f",
