@@ -8,7 +8,7 @@
   ],
   "packageManager": "bun@1.3.14",
   "scripts": {
-    "dev": "bun --filter * dev",
+    "dev": "bun --filter '*' dev",
     "dev:web": "bun --filter @logverifier/web dev",
     "dev:api": "bun --filter @logverifier/api dev",
     "build:web": "bun --filter @logverifier/web build",
